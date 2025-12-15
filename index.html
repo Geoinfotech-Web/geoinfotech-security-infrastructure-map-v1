@@ -1047,10 +1047,43 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        const all = wardLayer.getSource().getFeatures();
+       function getRegionRisk(state, lga, ward) {
 
-        const regionA = all.filter(f => matchRegionFeature(f, SA, LA, WA));
-        const regionB = all.filter(f => matchRegionFeature(f, SB, LB, WB));
+    // STATE-LEVEL comparison must use RiskIndex layer
+    if (state && !lga && !ward) {
+        const rf = lyr_RiskIndex_1.getSource().getFeatures().find(f =>
+            normalize(f.get("statename")) === normalize(state)
+        );
+
+        if (!rf) return null;
+
+        const score = Number(rf.get("risk_score"));
+        return {
+            count: 1,
+            avgScore: score,
+            riskClass: classifyScore(score)
+        };
+    }
+
+    // LGA / WARD fallback uses wardLayer
+    const matches = wardLayer.getSource().getFeatures()
+        .filter(f => matchRegionFeature(f, state, lga, ward));
+
+    if (!matches.length) return null;
+
+    const scores = matches
+        .map(f => Number(f.get("risk_score")))
+        .filter(v => !isNaN(v));
+
+    const mean = avg(scores);
+
+    return {
+        count: scores.length,
+        avgScore: Number(mean.toFixed(1)),
+        riskClass: classifyScore(mean)
+    };
+}
+
 
         if (!regionA.length) {
             alert("No matching features found for Region A.");
@@ -1064,19 +1097,28 @@ document.addEventListener("DOMContentLoaded", function () {
         // Use the same field your search meta uses:
         // Risk Index_risk_score
         function getStats(region) {
-            const scores = region.map(f => Number(f.get("Risk Index_risk_score")) || 0);
-            const mean   = avg(scores);
-            const cls    = classifyScore(mean);
+    const scores = region
+        .map(f => Number(f.get("risk_score")))
+        .filter(v => !isNaN(v));
 
-            return {
-                count: region.length,
-                avgScore: Number(mean.toFixed(1)),
-                riskClass: cls
-            };
-        }
+    const mean = avg(scores);
+    const cls  = classifyScore(mean);
 
-        const statsA = getStats(regionA);
-        const statsB = getStats(regionB);
+    return {
+        count: scores.length,
+        avgScore: Number(mean.toFixed(1)),
+        riskClass: cls
+    };
+}
+
+       const statsA = getRegionRisk(SA, LA, WA);
+const statsB = getRegionRisk(SB, LB, WB);
+
+if (!statsA || !statsB) {
+    alert("Unable to compute risk for one of the regions.");
+    return;
+}
+
 
         // Rank classes: Very Low < Low < Medium < High < Very High
         const rankMap = {
@@ -1534,3 +1576,4 @@ highlightLayer.setZIndex(999999);
 </div>    
     </body>
 </html>
+
